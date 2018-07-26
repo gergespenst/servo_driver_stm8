@@ -84,25 +84,40 @@ void InitUart(){
 #define STEPPER_PIN_2 GPIO_PIN_5
 #define STEPPER_PIN_3 GPIO_PIN_6
 #define STEPPER_PORT    GPIOC
+#define STEPPER_MASK (STEPPER_PIN_0 | STEPPER_PIN_1 | STEPPER_PIN_2 | STEPPER_PIN_3)
 
 #define STEP_PORT GPIOA
 #define STEP_PIN  GPIO_PIN_1     
 #define DIR_PORT  GPIOA
 #define DIR_PIN   GPIO_PIN_2
 
+//second stepper
+#define STEP_PORT_2 GPIOB
+#define STEP_PIN_2  GPIO_PIN_4
+#define DIR_PORT_2  GPIOB
+#define DIR_PIN_2   GPIO_PIN_5
+
+#define STEPPER_2_PIN_0 GPIO_PIN_3
+#define STEPPER_2_PIN_1 GPIO_PIN_4
+#define STEPPER_2_PIN_2 GPIO_PIN_5
+#define STEPPER_2_PIN_3 GPIO_PIN_6
+#define STEPPER_2_PORT    GPIOD
+
+#define STEPPER_2_MASK (STEPPER_2_PIN_0 | STEPPER_2_PIN_1 | STEPPER_2_PIN_2 | STEPPER_2_PIN_3)
+
 uint8_t stepTable[4] = {STEPPER_PIN_0,STEPPER_PIN_2,STEPPER_PIN_1,STEPPER_PIN_3};
         
-#define STEPPER_MASK (STEPPER_PIN_0 | STEPPER_PIN_1 | STEPPER_PIN_2 | STEPPER_PIN_3)
+
 
 void full_step(){
- GPIOB->ODR ^= GPIO_PIN_5;
+// GPIOB->ODR ^= GPIO_PIN_5;
                   enableInterrupts();
   static uint8_t  state = 0;
   if(state > 3) state = 0;
   if( (DIR_PORT->IDR & DIR_PIN) == 0)
       STEPPER_PORT->ODR = (STEPPER_PORT->ODR  & ~STEPPER_MASK) | stepTable[3-state];
   else
-    STEPPER_PORT->ODR = (STEPPER_PORT->ODR  & ~STEPPER_MASK) | stepTable[state];
+      STEPPER_PORT->ODR = (STEPPER_PORT->ODR  & ~STEPPER_MASK) | stepTable[state];
   state++;
 }
 uint8_t halfStepTable[8] = {STEPPER_PIN_0,STEPPER_PIN_0|STEPPER_PIN_2,
@@ -115,13 +130,32 @@ void half_step(){
   enableInterrupts();
   static uint8_t  state = 0;
   if(state > 7) state = 0;
+  
   if( (DIR_PORT->IDR & DIR_PIN) == 0)
       STEPPER_PORT->ODR = (STEPPER_PORT->ODR  & ~STEPPER_MASK) | halfStepTable[7-state];
   else
-    STEPPER_PORT->ODR = (STEPPER_PORT->ODR  & ~STEPPER_MASK) | halfStepTable[state];
+      STEPPER_PORT->ODR = (STEPPER_PORT->ODR  & ~STEPPER_MASK) | halfStepTable[state];
+  
   state++;
 }
 
+uint8_t halfStep2Table[8] = {STEPPER_2_PIN_0,STEPPER_2_PIN_0|STEPPER_2_PIN_2,
+                             STEPPER_2_PIN_2,STEPPER_2_PIN_2|STEPPER_2_PIN_1,
+                             STEPPER_2_PIN_1,STEPPER_2_PIN_1|STEPPER_2_PIN_3,
+                             STEPPER_2_PIN_3,STEPPER_2_PIN_3|STEPPER_2_PIN_0};
+void half_step_2(){
+ 
+  enableInterrupts();
+  static uint8_t  state = 0;
+  if(state > 7) state = 0;
+  
+  if( (DIR_PORT_2->IDR & DIR_PIN_2) == 0)
+      STEPPER_2_PORT->ODR = (STEPPER_2_PORT->ODR  & ~STEPPER_2_MASK) | halfStep2Table[7-state];
+  else
+      STEPPER_2_PORT->ODR = (STEPPER_2_PORT->ODR  & ~STEPPER_2_MASK) | halfStep2Table[state];
+  
+  state++;
+}
 
 
 void main(void)
@@ -132,15 +166,21 @@ void main(void)
 	GPIO_Init(GPIOB,GPIO_PIN_5,GPIO_MODE_OUT_PP_LOW_FAST);
         //Step Motor port init
 	GPIO_Init(STEPPER_PORT,STEPPER_MASK,GPIO_MODE_OUT_PP_HIGH_FAST);
+        //second step motor port init
+        GPIO_Init(STEPPER_2_PORT,STEPPER_2_MASK,GPIO_MODE_OUT_PP_HIGH_FAST);
         //Input lines
         GPIO_Init(STEP_PORT,STEP_PIN,GPIO_MODE_IN_FL_IT);
         GPIO_Init(DIR_PORT,DIR_PIN,GPIO_MODE_IN_PU_NO_IT);
+        //Second input lines
+        GPIO_Init(STEP_PORT_2,STEP_PIN_2,GPIO_MODE_IN_FL_IT);
+        GPIO_Init(DIR_PORT_2,DIR_PIN_2,GPIO_MODE_IN_PU_NO_IT);
         //Configure interrupt
         EXTI_SetExtIntSensitivity(EXTI_PORT_GPIOA,EXTI_SENSITIVITY_RISE_ONLY);
+        EXTI_SetExtIntSensitivity(EXTI_PORT_GPIOB,EXTI_SENSITIVITY_RISE_ONLY);
 	InitTIM4();//Инициализация таймера для диспетчера задач
-	InitUart();
+        //	InitUart();
 	//Заполняем очередь задач
-	//AddTask(Blink,0,500);
+	AddTask(Blink,0,500);
        
 
 	/////////////////////////
