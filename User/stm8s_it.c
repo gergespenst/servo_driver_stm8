@@ -115,6 +115,8 @@ INTERRUPT_HANDLER(CLK_IRQHandler, 2)
   */
 extern void Blink();
 extern void full_step();
+extern void full_step_2();
+
 extern void half_step();
 extern void half_step_2();
 INTERRUPT_HANDLER(EXTI_PORTA_IRQHandler, 3)
@@ -124,7 +126,7 @@ INTERRUPT_HANDLER(EXTI_PORTA_IRQHandler, 3)
   */
   
   //disableInterrupts();
-  AddTask(half_step,1,0);
+  AddTask(full_step,1,0);
  
   
 }
@@ -140,7 +142,7 @@ INTERRUPT_HANDLER(EXTI_PORTB_IRQHandler, 4)
      it is recommended to set a breakpoint on the following instruction.
   */
   //disableInterrupts();
-  AddTask(half_step_2,1,0);
+  AddTask(full_step_2,1,0);
 }
 
 /**

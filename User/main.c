@@ -157,6 +157,21 @@ void half_step_2(){
   state++;
 }
 
+uint8_t step2Table[4] = {STEPPER_2_PIN_0,STEPPER_2_PIN_2,STEPPER_2_PIN_1,STEPPER_2_PIN_3};
+
+void full_step_2(){
+
+  enableInterrupts();
+  static uint8_t  state = 0;
+  if(state > 3) state = 0;
+ if( (DIR_PORT_2->IDR & DIR_PIN_2) == 0)
+      STEPPER_2_PORT->ODR = (STEPPER_2_PORT->ODR  & ~STEPPER_2_MASK) | step2Table[3-state];
+  else
+      STEPPER_2_PORT->ODR = (STEPPER_2_PORT->ODR  & ~STEPPER_2_MASK) | step2Table[state];
+  state++;
+}
+
+
 
 void main(void)
 {
