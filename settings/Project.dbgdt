@@ -698,7 +698,7 @@
             <IarPane-34085>
                 <expressions>
                     <item>TaskQueue[MAX_TASKS]</item>
-                    <item></item>
+                    <item />
                 </expressions>
                 <col-names>
                     <item>Expression</item>
@@ -787,7 +787,7 @@
                     <item>TaskQueue[MAX_TASKS]</item>
                     <item>STEPPER_2_PORT</item>
                     <item>STEPPER_2_PORT-&gt;ODR</item>
-                    <item></item>
+                    <item />
                 </expressions>
                 <col-names>
                     <item>Expression</item>
