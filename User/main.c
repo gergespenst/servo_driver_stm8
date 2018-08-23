@@ -41,13 +41,8 @@ H-bridge convert to driver interface (step+direction lines)*/
 #include "stm8s_spi.h"
 
 #include "task_query.h"
-#include "led_ws2812.h"
-#include "led_effects.h"
 
-void Blink(){
-	GPIOB->ODR ^= GPIO_PIN_5;
-
-}
+#include <stdlib.h>
 
 #pragma inline=forced
 static void InitTIM4(){
@@ -63,8 +58,15 @@ static void InitTIM4(){
 }
 
 
-#include <stdlib.h>
-
+#pragma inline=forced
+static void InitTIM2(){//config GCLK out
+  TIM2_DeInit();
+  TIM2_TimeBaseInit(TIM2_PRESCALER_1,1);
+  TIM2_OC1Init(TIM2_OCMODE_TOGGLE,TIM2_OUTPUTSTATE_ENABLE,1, TIM2_OCPOLARITY_HIGH);
+  TIM2_OC1PreloadConfig(ENABLE);
+  TIM2_ARRPreloadConfig(ENABLE);
+  TIM2_Cmd(ENABLE);
+}
 
 
 
@@ -78,127 +80,181 @@ void InitUart(){
 	UART1_Cmd(ENABLE);
 }
 
-//stepper
-#define STEPPER_PIN_0 GPIO_PIN_3
-#define STEPPER_PIN_1 GPIO_PIN_4
-#define STEPPER_PIN_2 GPIO_PIN_5
-#define STEPPER_PIN_3 GPIO_PIN_6
-#define STEPPER_PORT    GPIOC
-#define STEPPER_MASK (STEPPER_PIN_0 | STEPPER_PIN_1 | STEPPER_PIN_2 | STEPPER_PIN_3)
 
-#define STEP_PORT GPIOA
-#define STEP_PIN  GPIO_PIN_1     
-#define DIR_PORT  GPIOA
-#define DIR_PIN   GPIO_PIN_2
+//first stepper control input
+#define STEP_PORT_1 GPIOA
+#define STEP_PIN_1 GPIO_PIN_1     
+#define DIR_PORT_1 GPIOA
+#define DIR_PIN_1 GPIO_PIN_2
 
-//second stepper
+
+void DelayDisable();
+void ST_1_Step();
+void ST_2_Step();
+
+void FirstStepperInterrupt(){
+  AddTask(ST_1_Step,0,0);
+  AddTask(DelayDisable,100,0);
+}
+
+//second stepper control input
 #define STEP_PORT_2 GPIOB
 #define STEP_PIN_2  GPIO_PIN_4
 #define DIR_PORT_2  GPIOB
 #define DIR_PIN_2   GPIO_PIN_5
 
-#define STEPPER_2_PIN_0 GPIO_PIN_3
-#define STEPPER_2_PIN_1 GPIO_PIN_4
-#define STEPPER_2_PIN_2 GPIO_PIN_5
-#define STEPPER_2_PIN_3 GPIO_PIN_6
-#define STEPPER_2_PORT    GPIOD
-
-#define STEPPER_2_MASK (STEPPER_2_PIN_0 | STEPPER_2_PIN_1 | STEPPER_2_PIN_2 | STEPPER_2_PIN_3)
-
-uint8_t stepTable[4] = {STEPPER_PIN_0,STEPPER_PIN_2,STEPPER_PIN_1,STEPPER_PIN_3};
-        
 
 
-void full_step(){
-// GPIOB->ODR ^= GPIO_PIN_5;
-                  enableInterrupts();
-  static uint8_t  state = 0;
-  if(state > 3) state = 0;
-  if( (DIR_PORT->IDR & DIR_PIN) == 0)
-      STEPPER_PORT->ODR = (STEPPER_PORT->ODR  & ~STEPPER_MASK) | stepTable[3-state];
-  else
-      STEPPER_PORT->ODR = (STEPPER_PORT->ODR  & ~STEPPER_MASK) | stepTable[state];
-  state++;
+void SecondStepperInterrupt(){
+  AddTask(ST_2_Step,0,0);
+  AddTask(DelayDisable,100,0);
 }
-uint8_t halfStepTable[8] = {STEPPER_PIN_0,STEPPER_PIN_0|STEPPER_PIN_2,
-                            STEPPER_PIN_2,STEPPER_PIN_2|STEPPER_PIN_1,
-                            STEPPER_PIN_1,STEPPER_PIN_1|STEPPER_PIN_3,
-                            STEPPER_PIN_3,STEPPER_PIN_3|STEPPER_PIN_0};
-            
-void half_step(){
+
+
+//Stepper driver control port
+#define ST_DRV_PORT GPIOC
+#define ST_DRV_CS1  GPIO_PIN_4
+#define ST_DRV_CS2  GPIO_PIN_7
+#define ST_DRV_ENA  GPIO_PIN_3
+#define ST_DRV_SPI_MOSI  GPIO_PIN_6
+#define ST_DRV_SPI_SCK   GPIO_PIN_5
+
+#define NUM_OF_SPI 2
+
+#pragma inline=forced
+static void InitSPI(){
+  SPI_DeInit();
+  SPI_Init(SPI_FIRSTBIT_MSB,SPI_BAUDRATEPRESCALER_32,SPI_MODE_MASTER,
+           SPI_CLOCKPOLARITY_HIGH,SPI_CLOCKPHASE_2EDGE,SPI_DATADIRECTION_1LINE_TX,
+           SPI_NSS_SOFT,0x00);
+  SPI_Cmd(ENABLE);
+}
+
+void SendSpiData(uint8_t st_num,uint16_t spi_data){
+  st_num = st_num%NUM_OF_SPI;
+  if(st_num == 0) GPIO_WriteLow(ST_DRV_PORT,ST_DRV_CS1);
+  if(st_num == 1) GPIO_WriteLow(ST_DRV_PORT,ST_DRV_CS2);
+  
+  SPI_SendData((spi_data & 0xFF00) >> 8);
+  while (SPI_GetFlagStatus(SPI_FLAG_TXE) == RESET);
+  SPI_SendData((spi_data & 0x00FF));
+  while (SPI_GetFlagStatus(SPI_FLAG_BSY) == SET);
+  
+  if(st_num == 0) GPIO_WriteHigh(ST_DRV_PORT,ST_DRV_CS1);
+  if(st_num == 1) GPIO_WriteHigh(ST_DRV_PORT,ST_DRV_CS2);
+}
+
+
+//Step driver control logic
  
-  enableInterrupts();
-  static uint8_t  state = 0;
-  if(state > 7) state = 0;
-  
-  if( (DIR_PORT->IDR & DIR_PIN) == 0)
-      STEPPER_PORT->ODR = (STEPPER_PORT->ODR  & ~STEPPER_MASK) | halfStepTable[7-state];
-  else
-      STEPPER_PORT->ODR = (STEPPER_PORT->ODR  & ~STEPPER_MASK) | halfStepTable[state];
-  
-  state++;
+typedef struct {
+	uint16_t br_blank_time:2;
+	uint16_t br_off_time:5;
+	uint16_t br_fast_decay:4;
+	uint16_t br_sync_control:1;
+	uint16_t unused:2;
+	uint16_t reg_num:2;
+	} T_0_1_REG;
+
+typedef struct {
+	uint16_t br_2_int_pwm_mode:1;
+	uint16_t br_2_ext_pwm_mode:1;
+	uint16_t br_2_phase:1;
+	uint16_t br_2_DAC:4;
+	uint16_t br_1_int_pwm_mode:1;
+	uint16_t br_1_ext_pwm_mode:1;
+	uint16_t br_1_phase:1;
+	uint16_t br_1_DAC:4;
+	uint16_t reg_num:2;
+} T_2_REG;
+
+typedef struct {
+	uint16_t therm_mon:1;
+	uint16_t charge_pump:1;
+	uint16_t unused:12;
+	uint16_t reg_num:2;
+} T_3_REG;
+
+
+#define TO_INT(x) ( *((uint16_t*) &(x)) )
+
+T_2_REG g_steps[4];
+
+void TestSpi(){
+GPIO_WriteHigh(ST_DRV_PORT,ST_DRV_ENA);//Enable DRV
+  SendSpiData(0,TO_INT(g_steps[0]));
 }
 
-uint8_t halfStep2Table[8] = {STEPPER_2_PIN_0,STEPPER_2_PIN_0|STEPPER_2_PIN_2,
-                             STEPPER_2_PIN_2,STEPPER_2_PIN_2|STEPPER_2_PIN_1,
-                             STEPPER_2_PIN_1,STEPPER_2_PIN_1|STEPPER_2_PIN_3,
-                             STEPPER_2_PIN_3,STEPPER_2_PIN_3|STEPPER_2_PIN_0};
-void half_step_2(){
- 
-  enableInterrupts();
-  static uint8_t  state = 0;
-  if(state > 7) state = 0;
-  
-  if( (DIR_PORT_2->IDR & DIR_PIN_2) == 0)
-      STEPPER_2_PORT->ODR = (STEPPER_2_PORT->ODR  & ~STEPPER_2_MASK) | halfStep2Table[7-state];
-  else
-      STEPPER_2_PORT->ODR = (STEPPER_2_PORT->ODR  & ~STEPPER_2_MASK) | halfStep2Table[state];
-  
+void ST_1_Step(){
+  static uint8_t state = 0;
+    GPIO_WriteHigh(ST_DRV_PORT,ST_DRV_ENA);//Enable DRV
+   if(GPIO_ReadInputPin(DIR_PORT_1,DIR_PIN_1) == RESET)
+    //if( (DIR_PORT_1->IDR & DIR_PIN_1) == 0)
+                    SendSpiData(0,TO_INT(g_steps[state]));
+   else
+                    SendSpiData(0,TO_INT(g_steps[3 - state]));
   state++;
+  (state > 3)?(state = 0):(state = state); 
 }
 
-uint8_t step2Table[4] = {STEPPER_2_PIN_0,STEPPER_2_PIN_2,STEPPER_2_PIN_1,STEPPER_2_PIN_3};
-
-void full_step_2(){
-
-  enableInterrupts();
-  static uint8_t  state = 0;
-  if(state > 3) state = 0;
- if( (DIR_PORT_2->IDR & DIR_PIN_2) == 0)
-      STEPPER_2_PORT->ODR = (STEPPER_2_PORT->ODR  & ~STEPPER_2_MASK) | step2Table[3-state];
-  else
-      STEPPER_2_PORT->ODR = (STEPPER_2_PORT->ODR  & ~STEPPER_2_MASK) | step2Table[state];
+void ST_2_Step(){
+  static uint8_t state = 0;
+    GPIO_WriteHigh(ST_DRV_PORT,ST_DRV_ENA);//Enable DRV
+   if(GPIO_ReadInputPin(DIR_PORT_2,DIR_PIN_2) == RESET)
+                    SendSpiData(1,TO_INT(g_steps[state]));
+   else
+                    SendSpiData(1,TO_INT(g_steps[3 - state]));
   state++;
+  (state > 3)?(state = 0):(state = state); 
 }
 
+void DelayDisable(){
+  GPIO_WriteLow(ST_DRV_PORT,ST_DRV_ENA);
+}
 
-
+#define AMPL 0x07
 void main(void)
 {
+  
+  for(uint8_t i = 0 ; i < 4; i++){
+    g_steps[i].reg_num = 2;
+    g_steps[i].br_1_DAC  = AMPL*(1 - i%2);
+    g_steps[i].br_1_phase = i/2*(1 - i%2);
+    g_steps[i].br_2_DAC  = AMPL*(i%2);
+    g_steps[i].br_2_phase = i/2*(i%2);
+    g_steps[i].br_1_int_pwm_mode = 1;
+    g_steps[i].br_2_int_pwm_mode = 1;
+      
+  }
+  
  	//Ставим частоту 16 МГц
         CLK_HSIPrescalerConfig(CLK_PRESCALER_HSIDIV1);
-	//
-	GPIO_Init(GPIOB,GPIO_PIN_5,GPIO_MODE_OUT_PP_LOW_FAST);
-        //Step Motor port init
-	GPIO_Init(STEPPER_PORT,STEPPER_MASK,GPIO_MODE_OUT_PP_HIGH_FAST);
-        //second step motor port init
-        GPIO_Init(STEPPER_2_PORT,STEPPER_2_MASK,GPIO_MODE_OUT_PP_HIGH_FAST);
-        //Input lines
-        GPIO_Init(STEP_PORT,STEP_PIN,GPIO_MODE_IN_FL_IT);
-        GPIO_Init(DIR_PORT,DIR_PIN,GPIO_MODE_IN_PU_NO_IT);
-        //Second input lines
+              
+        //Step control input lines 1
+        GPIO_Init(STEP_PORT_1,STEP_PIN_1,GPIO_MODE_IN_FL_IT);
+        GPIO_Init(DIR_PORT_1,DIR_PIN_1,GPIO_MODE_IN_PU_NO_IT);
+        //Step control input lines 2
         GPIO_Init(STEP_PORT_2,STEP_PIN_2,GPIO_MODE_IN_FL_IT);
         GPIO_Init(DIR_PORT_2,DIR_PIN_2,GPIO_MODE_IN_PU_NO_IT);
         //Configure interrupt
         EXTI_SetExtIntSensitivity(EXTI_PORT_GPIOA,EXTI_SENSITIVITY_RISE_ONLY);
         EXTI_SetExtIntSensitivity(EXTI_PORT_GPIOB,EXTI_SENSITIVITY_RISE_ONLY);
+        //
 	InitTIM4();//Инициализация таймера для диспетчера задач
         //	InitUart();
-	//Заполняем очередь задач
-	AddTask(Blink,0,500);
-       
-
+        InitTIM2();//GCLK Timer init
+	//Drv control PORT init        
+        GPIO_Init(ST_DRV_PORT,ST_DRV_CS1  ,GPIO_MODE_OUT_PP_HIGH_FAST);
+        GPIO_Init(ST_DRV_PORT,ST_DRV_CS2  ,GPIO_MODE_OUT_PP_HIGH_FAST);
+        GPIO_Init(ST_DRV_PORT,ST_DRV_ENA  ,GPIO_MODE_OUT_PP_HIGH_FAST);
+        GPIO_Init(ST_DRV_PORT,ST_DRV_SPI_MOSI,GPIO_MODE_OUT_PP_HIGH_FAST);
+        GPIO_Init(ST_DRV_PORT,ST_DRV_SPI_SCK ,GPIO_MODE_OUT_PP_HIGH_FAST);
+        InitSPI();
+        //Fill task query
+     //   AddTask(TestSpi,0,2);
 	/////////////////////////
+        SendSpiData(0,0x0040);
+        SendSpiData(0,0x4040);
 	enableInterrupts();
  /* Infinite loop */
   while (1)
