@@ -253,8 +253,8 @@ void main(void)
         //Fill task query
      //   AddTask(TestSpi,0,2);
 	/////////////////////////
-        SendSpiData(0,0x0040);
-        SendSpiData(0,0x4040);
+       // SendSpiData(0,0x0040);
+        //SendSpiData(0,0x4040);
 	enableInterrupts();
  /* Infinite loop */
   while (1)
