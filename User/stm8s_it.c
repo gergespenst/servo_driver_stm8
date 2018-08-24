@@ -370,47 +370,20 @@ INTERRUPT_HANDLER(TIM1_CAP_COM_IRQHandler, 12)
 	fifo_reset(&uart_rx_buf);
 }
 
-// extern void SetPixelColor(uint8_t r,uint8_t g,uint8_t b);
- extern void SetPixelColor(uint8_t pixnum,uint8_t r,uint8_t g,uint8_t b,uint16_t brightness);
- extern void SetColorEffect(uint8_t effect,uint8_t speed);
- extern void SetBrightnessEffect(uint8_t effect,uint8_t speed);
+//Command definitions
+#define STEP 0x01 // [0x02 CMD NUM_PORT]
 void ParseComand(){
 
-	uint8_t data,r,g,b,br;
-
+	uint8_t data;
+ 
 	fifo_get(&uart_rx_buf,1,&data);
-	if(data == 0xC1){
-		fifo_get(&uart_rx_buf,0,&data);
-		if( (data & 0x0F) == 0x06){
-			fifo_get(&uart_rx_buf,2,&data);
-			fifo_get(&uart_rx_buf,3,&r);
-			fifo_get(&uart_rx_buf,4,&g);
-			fifo_get(&uart_rx_buf,5,&b);
-			fifo_get(&uart_rx_buf,6,&br);
-			SetPixelColor(data,r,g,b,br);
-			UART1_SendData8(0xDA);
-		}
-	}
-	if(data == 0xC2){
-		fifo_get(&uart_rx_buf,0,&data);
-		if( (data & 0x0F) == 0x03){
-			fifo_get(&uart_rx_buf,2,&data);
-			fifo_get(&uart_rx_buf,3,&r);
-
-			SetColorEffect(data,r);
-			UART1_SendData8(0xDA);
-		}
-	}
-	if(data == 0xC3){
-		fifo_get(&uart_rx_buf,0,&data);
-		if( (data & 0x0F) == 0x03){
-			fifo_get(&uart_rx_buf,2,&data);
-			fifo_get(&uart_rx_buf,3,&r);
-
-			SetBrightnessEffect(data,r);
-			UART1_SendData8(0xDA);
-		}
-	}
+	switch(data){
+        case 0x01:{
+            fifo_get(&uart_rx_buf,1,&data);
+                  if((data & 0x03) == 0x01) ST_1_Step();
+                  if((data & 0x03) == 0x02) ST_2_Step();
+                  }break;
+        }
 	fifo_reset(&uart_rx_buf);
 }
 

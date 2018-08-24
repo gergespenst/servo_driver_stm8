@@ -35,6 +35,7 @@ H-bridge convert to driver interface (step+direction lines)*/
 #include "stm8s_clk.h"
 #include "stm8s_tim4.h"
 #include "stm8s_it.h"
+#include "stm8s_flash.h"
 
 #include "stm8s_tim2.h"
 #include "stm8s_uart1.h"
@@ -95,7 +96,7 @@ void ST_2_Step();
 
 void FirstStepperInterrupt(){
   AddTask(ST_1_Step,0,0);
-     AddTask(DelayDisable1,100,0);
+     
  
 }
 
@@ -109,7 +110,7 @@ void FirstStepperInterrupt(){
 
 void SecondStepperInterrupt(){
   AddTask(ST_2_Step,0,0);
-  AddTask(DelayDisable2,100,0);
+ 
  
 }
 
@@ -184,7 +185,13 @@ typedef struct {
 
 #define TO_INT(x) ( *((uint16_t*) &(x)) )
 
+//global stepper variables
 T_2_REG g_steps[4];
+T_0_1_REG g_0_reg;
+T_0_1_REG g_1_reg;
+T_2_REG g_2_reg;
+T_3_REG g_3_reg;
+
 
 void TestSpi(){
 GPIO_WriteHigh(ST_DRV_PORT,ST_DRV_EN1);//Enable DRV
@@ -211,6 +218,7 @@ void ST_1_Step(){
                     SendSpiData(0,TO_INT(g_steps[3 - state]));
   state++;
   (state > 3)?(state = 0):(state = state);
+  AddTask(DelayDisable1,300,0);
 
 }
 
@@ -229,26 +237,38 @@ void ST_2_Step(){
                     SendSpiData(1,TO_INT(g_steps[3 - state]));
   state++;
   (state > 3)?(state = 0):(state = state); 
-   AddTask(DelayDisable2,100,0);
+   AddTask(DelayDisable2,300,0);
 }
 
 
 
 #define AMPL 0x07
-void main(void)
-{
-  
+void ReloadRegs(){
+  //Init global stepper regs
+ 
   for(uint8_t i = 0 ; i < 4; i++){
     g_steps[i].reg_num = 2;
-    g_steps[i].br_1_DAC  = AMPL*(1 - i%2);
+    g_steps[i].br_1_DAC  = g_2_reg.br_1_DAC *(1 - i%2);
     g_steps[i].br_1_phase = i/2*(1 - i%2);
-    g_steps[i].br_2_DAC  = AMPL*(i%2);
+    g_steps[i].br_2_DAC  = g_2_reg.br_2_DAC*(i%2);
     g_steps[i].br_2_phase = i/2*(i%2);
     g_steps[i].br_1_int_pwm_mode = 1;
     g_steps[i].br_2_int_pwm_mode = 1;
       
   }
+}
+void LoadFromEEPROM(){
+ // uint16_t* pReg = (uint16_t*) &g_0_reg;
+//  *pReg = FLASH_ReadByte(0x4000) << 8 + FLASH_ReadByte(0x4001);
   
+  g_2_reg.br_1_DAC = AMPL;
+  g_2_reg.br_2_DAC = AMPL;
+}
+
+void main(void)
+{
+  
+
  	//Ставим частоту 16 МГц
         CLK_HSIPrescalerConfig(CLK_PRESCALER_HSIDIV1);
               
@@ -281,9 +301,15 @@ void main(void)
         //Fill task query
         //AddTask(TestSpi,0,50);
       // AddTask(ST_1_Step,0,50);
+        InitUart();
 	/////////////////////////
+        
+        LoadFromEEPROM();
+        ReloadRegs();
+        ///////////////////////
         SendSpiData(0,0x0040);
         SendSpiData(0,0x4040);
+        /////////////////////////
 	enableInterrupts();
  /* Infinite loop */
   while (1)
