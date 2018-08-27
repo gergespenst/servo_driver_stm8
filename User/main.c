@@ -256,6 +256,8 @@ void ReloadRegs(){
     g_steps[i].br_2_phase = i/2*(i%2);
     g_steps[i].br_1_int_pwm_mode =   g_2_reg.br_1_int_pwm_mode;
     g_steps[i].br_2_int_pwm_mode = g_2_reg.br_2_int_pwm_mode ;
+    g_steps[i].br_1_ext_pwm_mode =      g_2_reg.br_1_ext_pwm_mode;
+    g_steps[i].br_2_ext_pwm_mode =      g_2_reg.br_2_ext_pwm_mode ;
       
   }
 }
@@ -279,6 +281,8 @@ void LoadFromEEPROM(){
   g_2_reg.br_2_DAC = AMPL;
   g_2_reg.br_1_int_pwm_mode = 0;
   g_2_reg.br_2_int_pwm_mode = 0;
+  g_2_reg.br_1_ext_pwm_mode = 1;
+  g_2_reg.br_2_ext_pwm_mode = 1;
   
   
   
@@ -347,8 +351,9 @@ void main(void)
       //AddTask(ST_1_Step,0,50);
     //  AddTask(ST_2_Step,0,50);
       //  ST_1_Step();
-       // SendSpiData(0,0x0040);
-      //  SendSpiData(0,0x4040);
+        SendSpiData(1,0x0040);
+        SendSpiData(1,0x4040);
+       // UpdateOfftime(0x1F);
         /////////////////////////
 	enableInterrupts();
  /* Infinite loop */

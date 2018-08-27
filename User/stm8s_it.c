@@ -381,7 +381,8 @@ void ParseComand(){
 	fifo_get(&uart_rx_buf,1,&data);
 	switch(data){
         case STEP:{
-            fifo_get(&uart_rx_buf,1,&data);
+            fifo_get(&uart_rx_buf,2,&data);
+
                   if((data & 0x03) == 0x01) ST_1_Step();
                   if((data & 0x03) == 0x02) ST_2_Step();
                   }break;
