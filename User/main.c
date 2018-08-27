@@ -95,8 +95,9 @@ void ST_1_Step();
 void ST_2_Step();
 
 void FirstStepperInterrupt(){
-  AddTask(ST_1_Step,0,0);
-     
+  //AddTask(ST_1_Step,0,0);
+  
+     ST_1_Step();
  
 }
 
@@ -109,7 +110,8 @@ void FirstStepperInterrupt(){
 
 
 void SecondStepperInterrupt(){
-  AddTask(ST_2_Step,0,0);
+  //AddTask(ST_2_Step,0,0);
+  ST_2_Step();
  
  
 }
@@ -242,7 +244,7 @@ void ST_2_Step(){
 
 
 
-#define AMPL 0x07
+#define AMPL 0x0F
 void ReloadRegs(){
   //Init global stepper regs
  
@@ -252,17 +254,51 @@ void ReloadRegs(){
     g_steps[i].br_1_phase = i/2*(1 - i%2);
     g_steps[i].br_2_DAC  = g_2_reg.br_2_DAC*(i%2);
     g_steps[i].br_2_phase = i/2*(i%2);
-    g_steps[i].br_1_int_pwm_mode = 1;
-    g_steps[i].br_2_int_pwm_mode = 1;
+    g_steps[i].br_1_int_pwm_mode =   g_2_reg.br_1_int_pwm_mode;
+    g_steps[i].br_2_int_pwm_mode = g_2_reg.br_2_int_pwm_mode ;
       
   }
 }
 void LoadFromEEPROM(){
  // uint16_t* pReg = (uint16_t*) &g_0_reg;
 //  *pReg = FLASH_ReadByte(0x4000) << 8 + FLASH_ReadByte(0x4001);
-  
+  //reg_0
+  g_0_reg.br_blank_time = 0;
+  g_0_reg.br_fast_decay = 0;
+  g_0_reg.br_off_time = 0;
+  g_0_reg.br_sync_control = 0;
+  g_0_reg.reg_num = 0;
+  //reg_1
+  g_1_reg.br_blank_time = 0;
+  g_1_reg.br_fast_decay = 0;
+  g_1_reg.br_off_time = 0;
+  g_1_reg.br_sync_control = 0;
+  g_1_reg.reg_num = 1;
+  //reg_2
   g_2_reg.br_1_DAC = AMPL;
   g_2_reg.br_2_DAC = AMPL;
+  g_2_reg.br_1_int_pwm_mode = 0;
+  g_2_reg.br_2_int_pwm_mode = 0;
+  
+  
+  
+}
+  
+void UpdateDecay(uint8_t decay){
+  g_0_reg.br_fast_decay = decay & 0x0F;
+  g_1_reg.br_fast_decay = decay & 0x0F;
+  SendSpiData(0,TO_INT(g_0_reg));
+  SendSpiData(0,TO_INT(g_1_reg));
+   TIM2_Cmd(DISABLE);
+  
+}
+void UpdateOfftime(uint8_t offTime){
+  g_0_reg.br_off_time = offTime & 0x1F;
+  g_1_reg.br_off_time = offTime & 0x1F;
+  SendSpiData(0,TO_INT(g_0_reg));
+  SendSpiData(0,TO_INT(g_1_reg));
+   TIM2_Cmd(DISABLE);
+  
 }
 
 void main(void)
@@ -299,23 +335,27 @@ void main(void)
           
         InitSPI();
         //Fill task query
-        //AddTask(TestSpi,0,50);
-      // AddTask(ST_1_Step,0,50);
+
+       // GPIO_WriteLow(ST_DRV_PORT,ST_DRV_EN1);
         InitUart();
 	/////////////////////////
         
         LoadFromEEPROM();
         ReloadRegs();
         ///////////////////////
-        SendSpiData(0,0x0040);
-        SendSpiData(0,0x4040);
+                //AddTask(TestSpi,0,50);
+      //AddTask(ST_1_Step,0,50);
+    //  AddTask(ST_2_Step,0,50);
+      //  ST_1_Step();
+       // SendSpiData(0,0x0040);
+      //  SendSpiData(0,0x4040);
         /////////////////////////
 	enableInterrupts();
  /* Infinite loop */
   while (1)
   { 
     
-	  Dispatcher();
+	 Dispatcher();
 
   }
   

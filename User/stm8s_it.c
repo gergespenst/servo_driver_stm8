@@ -372,17 +372,27 @@ INTERRUPT_HANDLER(TIM1_CAP_COM_IRQHandler, 12)
 
 //Command definitions
 #define STEP 0x01 // [0x02 CMD NUM_PORT]
+#define SET_DECAY 0x02 //[0x02 CMD DECAY]
+#define SET_OFFTIME 0x03 //[0x02 CMD OFFTIME]
 void ParseComand(){
 
 	uint8_t data;
  
 	fifo_get(&uart_rx_buf,1,&data);
 	switch(data){
-        case 0x01:{
+        case STEP:{
             fifo_get(&uart_rx_buf,1,&data);
                   if((data & 0x03) == 0x01) ST_1_Step();
                   if((data & 0x03) == 0x02) ST_2_Step();
                   }break;
+        case SET_DECAY:{
+            fifo_get(&uart_rx_buf,1,&data);
+            UpdateDecay(data);
+        }break;
+        case SET_OFFTIME:{
+            fifo_get(&uart_rx_buf,1,&data);
+            UpdateOfftime(data);
+        }break;
         }
 	fifo_reset(&uart_rx_buf);
 }
