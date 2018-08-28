@@ -87,17 +87,25 @@ void InitUart(){
 #define STEP_PIN_1 GPIO_PIN_1     
 #define DIR_PORT_1 GPIOA
 #define DIR_PIN_1 GPIO_PIN_2
+#define HALF_STEP_1_PORT GPIOD
+#define HALF_STEP_1_PIN  GPIO_PIN_5
 
 
 void DelayDisable1();
 void DelayDisable2();
 void ST_1_Step();
+void ST_1_HalfStep();
 void ST_2_Step();
+void ST_2_HalfStep();
 
 void FirstStepperInterrupt(){
   //AddTask(ST_1_Step,0,0);
   
-     ST_1_Step();
+ if(GPIO_ReadInputPin(HALF_STEP_1_PORT,HALF_STEP_1_PIN) == RESET)
+      ST_1_HalfStep();
+  else
+      ST_1_Step();
+ 
  
 }
 
@@ -106,12 +114,16 @@ void FirstStepperInterrupt(){
 #define STEP_PIN_2  GPIO_PIN_4
 #define DIR_PORT_2  GPIOB
 #define DIR_PIN_2   GPIO_PIN_5
-
+#define HALF_STEP_2_PORT GPIOD
+#define HALF_STEP_2_PIN  GPIO_PIN_6
 
 
 void SecondStepperInterrupt(){
   //AddTask(ST_2_Step,0,0);
-  ST_2_Step();
+  if(GPIO_ReadInputPin(HALF_STEP_2_PORT,HALF_STEP_2_PIN) == RESET)
+      ST_2_HalfStep();
+  else
+      ST_2_Step();
  
  
 }
@@ -141,8 +153,13 @@ static void InitSPI(){
 
 void SendSpiData(uint8_t st_num,uint16_t spi_data){
   st_num = st_num%NUM_OF_SPI;
-  if(st_num == 0) GPIO_WriteLow(ST_DRV_PORT,ST_DRV_CS1);
-  if(st_num == 1) GPIO_WriteLow(ST_DRV_PORT,ST_DRV_CS2);
+  if(st_num == 0) {
+    GPIO_WriteLow(ST_DRV_PORT,ST_DRV_CS1);
+  }
+  if(st_num == 1) 
+  {
+    GPIO_WriteLow(ST_DRV_PORT,ST_DRV_CS2);
+  }
   
   SPI_SendData((spi_data & 0xFF00) >> 8);
   while (SPI_GetFlagStatus(SPI_FLAG_TXE) == RESET);
@@ -189,11 +206,22 @@ typedef struct {
 
 //global stepper variables
 T_2_REG g_steps[4];
+T_2_REG g_halfSteps[8] = {
+                           {.reg_num = 0x02,.br_1_DAC = 0x0F,.br_1_phase = 0,.br_2_DAC = 0x00,.br_2_phase = 0},
+                           {.reg_num = 0x02,.br_1_DAC = 0x07,.br_1_phase = 0,.br_2_DAC = 0x07,.br_2_phase = 0},
+                           {.reg_num = 0x02,.br_1_DAC = 0x00,.br_1_phase = 0,.br_2_DAC = 0x0F,.br_2_phase = 0},
+                           {.reg_num = 0x02,.br_1_DAC = 0x07,.br_1_phase = 1,.br_2_DAC = 0x07,.br_2_phase = 0},
+                           {.reg_num = 0x02,.br_1_DAC = 0x0F,.br_1_phase = 1,.br_2_DAC = 0x00,.br_2_phase = 1},
+                           {.reg_num = 0x02,.br_1_DAC = 0x07,.br_1_phase = 1,.br_2_DAC = 0x07,.br_2_phase = 1},
+                           {.reg_num = 0x02,.br_1_DAC = 0x00,.br_1_phase = 1,.br_2_DAC = 0x0F,.br_2_phase = 1},
+                           {.reg_num = 0x02,.br_1_DAC = 0x07,.br_1_phase = 0,.br_2_DAC = 0x07,.br_2_phase = 1}
+                          };
 T_0_1_REG g_0_reg;
 T_0_1_REG g_1_reg;
 T_2_REG g_2_reg;
 T_3_REG g_3_reg;
-
+T_2_REG nullSpeedReg={.reg_num = 0x02,.br_1_DAC = 0,.br_2_DAC = 0x00};
+T_2_REG g_lastState[2];
 
 void TestSpi(){
 GPIO_WriteHigh(ST_DRV_PORT,ST_DRV_EN1);//Enable DRV
@@ -205,21 +233,47 @@ temp.br_2_DAC = 0x00;
   
 }
 
+
 void DelayDisable1(){
   GPIO_WriteLow(ST_DRV_PORT,ST_DRV_EN1);
   TIM2_Cmd(DISABLE);
+ // 
+  
+  SendSpiData(0,TO_INT( g_lastState[0]));
+  TIM2_Cmd(ENABLE);
 }
 
 void ST_1_Step(){
   static uint8_t state = 0;
   TIM2_Cmd(ENABLE);
     GPIO_WriteHigh(ST_DRV_PORT,ST_DRV_EN1);//Enable DRV
-   if(GPIO_ReadInputPin(DIR_PORT_1,DIR_PIN_1) == RESET)
+    if(GPIO_ReadInputPin(DIR_PORT_1,DIR_PIN_1) == RESET){
                     SendSpiData(0,TO_INT(g_steps[state]));
-   else
+                    g_lastState[0] = g_steps[state];
+    }
+   else{
                     SendSpiData(0,TO_INT(g_steps[3 - state]));
+                    g_lastState[0] = g_steps[3 - state];
+   }
   state++;
   (state > 3)?(state = 0):(state = state);
+  AddTask(DelayDisable1,300,0);
+
+}
+void ST_1_HalfStep(){
+  static uint8_t state = 0;
+  TIM2_Cmd(ENABLE);
+    GPIO_WriteHigh(ST_DRV_PORT,ST_DRV_EN1);//Enable DRV
+    if(GPIO_ReadInputPin(DIR_PORT_1,DIR_PIN_1) == RESET){
+                    SendSpiData(0,TO_INT(g_halfSteps[state]));
+                    g_lastState[0] = g_halfSteps[state];
+    }
+    else{
+                    SendSpiData(0,TO_INT(g_halfSteps[7 - state]));
+                    g_lastState[0] = g_halfSteps[7 - state];
+    }
+  state++;
+  (state > 7)?(state = 0):(state = state);
   AddTask(DelayDisable1,300,0);
 
 }
@@ -227,21 +281,46 @@ void ST_1_Step(){
 void DelayDisable2(){
   GPIO_WriteLow(ST_DRV_EN2_PORT,ST_DRV_EN2);
   TIM2_Cmd(DISABLE);
+  //
+
+  SendSpiData(1,TO_INT(g_lastState[1]));
+  TIM2_Cmd(ENABLE);
 }
 
 void ST_2_Step(){
   static uint8_t state = 0;
-    TIM2_Cmd(ENABLE);
+    
     GPIO_WriteHigh(ST_DRV_EN2_PORT,ST_DRV_EN2);//Enable DRV
-   if(GPIO_ReadInputPin(DIR_PORT_2,DIR_PIN_2) == RESET)
+    TIM2_Cmd(ENABLE);
+    if(GPIO_ReadInputPin(DIR_PORT_2,DIR_PIN_2) == RESET){
                     SendSpiData(1,TO_INT(g_steps[state]));
-   else
-                    SendSpiData(1,TO_INT(g_steps[3 - state]));
+                    g_lastState[1] = g_halfSteps[state];
+    }
+   else{
+                  SendSpiData(1,TO_INT(g_steps[3 - state]));
+                  g_lastState[1] = g_halfSteps[3 - state];
+   }
   state++;
   (state > 3)?(state = 0):(state = state); 
-   AddTask(DelayDisable2,300,0);
+  AddTask(DelayDisable2,300,0);
 }
 
+void ST_2_HalfStep(){
+  static uint8_t state = 0;
+   TIM2_Cmd(ENABLE);
+    GPIO_WriteHigh(ST_DRV_EN2_PORT,ST_DRV_EN2);//Enable DRV
+     
+   if(GPIO_ReadInputPin(DIR_PORT_2,DIR_PIN_2) == RESET)
+      {SendSpiData(1,TO_INT(g_halfSteps[state]));
+      g_lastState[1] = g_halfSteps[state];
+      }
+   else
+      {SendSpiData(1,TO_INT(g_halfSteps[7 - state]));
+      g_lastState[1] = g_halfSteps[7 - state];}
+  state++;
+  (state > 7)?(state = 0):(state = state); 
+   AddTask(DelayDisable2,300,0);
+}
 
 
 #define AMPL 0x0F
@@ -288,22 +367,22 @@ void LoadFromEEPROM(){
   
 }
   
-void UpdateDecay(uint8_t decay){
-  g_0_reg.br_fast_decay = decay & 0x0F;
-  g_1_reg.br_fast_decay = decay & 0x0F;
-  SendSpiData(0,TO_INT(g_0_reg));
-  SendSpiData(0,TO_INT(g_1_reg));
-   TIM2_Cmd(DISABLE);
-  
-}
-void UpdateOfftime(uint8_t offTime){
-  g_0_reg.br_off_time = offTime & 0x1F;
-  g_1_reg.br_off_time = offTime & 0x1F;
-  SendSpiData(0,TO_INT(g_0_reg));
-  SendSpiData(0,TO_INT(g_1_reg));
-   TIM2_Cmd(DISABLE);
-  
-}
+//void UpdateDecay(uint8_t decay){
+//  g_0_reg.br_fast_decay = decay & 0x0F;
+//  g_1_reg.br_fast_decay = decay & 0x0F;
+//  SendSpiData(0,TO_INT(g_0_reg));
+//  SendSpiData(0,TO_INT(g_1_reg));
+//   TIM2_Cmd(DISABLE);
+//  
+//}
+//void UpdateOfftime(uint8_t offTime){
+//  g_0_reg.br_off_time = offTime & 0x1F;
+//  g_1_reg.br_off_time = offTime & 0x1F;
+//  SendSpiData(0,TO_INT(g_0_reg));
+//  SendSpiData(0,TO_INT(g_1_reg));
+//   TIM2_Cmd(DISABLE);
+//  
+//}
 
 void main(void)
 {
@@ -318,13 +397,15 @@ void main(void)
         //Step control input lines 2
         GPIO_Init(STEP_PORT_2,STEP_PIN_2,GPIO_MODE_IN_FL_IT);
         GPIO_Init(DIR_PORT_2,DIR_PIN_2,GPIO_MODE_IN_PU_NO_IT);
+        //Half step inputs
+
+        GPIO_Init(HALF_STEP_1_PORT,HALF_STEP_1_PIN,GPIO_MODE_IN_PU_NO_IT);
+        GPIO_Init(HALF_STEP_2_PORT,HALF_STEP_2_PIN,GPIO_MODE_IN_PU_NO_IT);
         //Configure interrupt
         EXTI_SetExtIntSensitivity(EXTI_PORT_GPIOA,EXTI_SENSITIVITY_RISE_ONLY);
         EXTI_SetExtIntSensitivity(EXTI_PORT_GPIOB,EXTI_SENSITIVITY_RISE_ONLY);
         //
-	InitTIM4();//Инициализация таймера для диспетчера задач
-        //	InitUart();
-        InitTIM2();//GCLK Timer init
+
 	//Drv control PORT init        
         GPIO_Init(ST_DRV_PORT,ST_DRV_CS1  ,GPIO_MODE_OUT_PP_HIGH_FAST);
         GPIO_Init(ST_DRV_PORT,ST_DRV_CS2  ,GPIO_MODE_OUT_PP_HIGH_FAST);
@@ -336,12 +417,16 @@ void main(void)
           //Disable DRV output
         GPIO_WriteLow(ST_DRV_PORT,ST_DRV_EN1);
         GPIO_WriteLow(ST_DRV_EN2_PORT,ST_DRV_EN2);
-          
+         	//Инициализация таймера для диспетчера задач
+        InitTIM4();
+        //	InitUart();
+        InitTIM2();//GCLK Timer init
+        
         InitSPI();
         //Fill task query
 
        // GPIO_WriteLow(ST_DRV_PORT,ST_DRV_EN1);
-        InitUart();
+       // InitUart();
 	/////////////////////////
         
         LoadFromEEPROM();
@@ -350,10 +435,14 @@ void main(void)
                 //AddTask(TestSpi,0,50);
       //AddTask(ST_1_Step,0,50);
     //  AddTask(ST_2_Step,0,50);
-      //  ST_1_Step();
-        SendSpiData(1,0x0040);
-        SendSpiData(1,0x4040);
-       // UpdateOfftime(0x1F);
+      //  ST_1_Step();       // UpdateOfftime(0x10);
+       // AddTask(ST_2_HalfStep,0,10);
+        
+        //SendSpiData(0,0x0040);
+        //SendSpiData(0,0x4040);
+        //SendSpiData(1,0x0040);
+        //SendSpiData(1,0x4040);
+
         /////////////////////////
 	enableInterrupts();
  /* Infinite loop */
